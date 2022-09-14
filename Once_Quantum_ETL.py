@@ -69,7 +69,7 @@ class Once_Quantum_ETL():
     self.tablon_inicial = pd.DataFrame() 
     self.tablon_inicial = pd.read_csv('/dbfs/FileStore/tables/ONCE_Quantum/Tablon_Inicial.csv', parse_dates=True)
     #Aseguramos que los Codigos de vendedores sean categóricos
-    self.tablon_inicial = self.tablon_inicial.astype({'CodigoPrevisto': 'string', 'CodigoSustitucion': 'string'})
+    self.tablon_inicial = self.tablon_inicial.astype({'CodigoPrevisto': 'str', 'CodigoSustitucion': 'str', 'ABS': 'str'})
         
       
   def informe_calidad_dato(self):
@@ -127,7 +127,7 @@ ficheroresult[ficheroresult.iloc[:,0] == 2768]
 # COMMAND ----------
 
 #presentar resultado de la Ingesta inicial
-instancia_carga.tablon_inicial
+#instancia_carga.tablon_inicial
 
 # COMMAND ----------
 
