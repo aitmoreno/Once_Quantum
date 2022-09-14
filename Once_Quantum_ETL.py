@@ -146,3 +146,7 @@ missing_data
 from pandas_profiling import ProfileReport
 prof = ProfileReport(instancia_carga.tablon_inicial_read.iloc[:,12:21])
 prof.to_file(output_file='/dbfs/FileStore/tables/ONCE_Quantum/informe.html')
+
+# COMMAND ----------
+
+displayHTML(prof.to_html())
