@@ -7,6 +7,7 @@
 #ETL inicial de los datos
 import pandas as pd
 import glob
+import numpy as np
 
 # COMMAND ----------
 
@@ -54,6 +55,8 @@ class Once_Quantum_ETL():
     for file in filenames:
      print("Reading file = ",file)
      self.tablon_inicial =  self.tablon_inicial.append(instancia_carga.procesar_fichero(file) , ignore_index=True) #Acumulamos la información de los ficheros individuales
+     self.tablon_inicial = self.tablon_inicial.replace(r'^\s*$', np.nan, regex=True) #Sustituimos espacios en blanco y '' en na
+     self.tablon_inicial = self.tablon_inicial.replace(r'nan', np.nan, regex=True) #Sustituimos nan de excel en na de numpy
 
 # COMMAND ----------
 
@@ -72,17 +75,39 @@ instancia_carga.procesar_directorio()
 
 # COMMAND ----------
 
-print(instancia_carga.tablon_inicial.shape)
-instancia_carga.tablon_inicial[instancia_carga.tablon_inicial.iloc[:,0] == 2768]
-
-# COMMAND ----------
-
 #Grabamos el tablón inicial en DBFS
 instancia_carga.tablon_inicial.to_csv('/dbfs/FileStore/tables/ONCE_Quantum/Tablon_Inicial.csv')                                       
 
 # COMMAND ----------
 
-instancia_carga.tablon_inicial.columns
+instancia_carga.tablon_inicial.dtypes
+instancia_carga.tablon_inicial
+
+# COMMAND ----------
+
+#Cargamos los datos almacenados en el proceso de Ingesta
+instancia_carga.tablon_inicial_read = pd.DataFrame() 
+instancia_carga.tablon_inicial_read = pd.read_csv('/dbfs/FileStore/tables/ONCE_Quantum/Tablon_Inicial.csv', parse_dates=True)
+
+#instancia_carga.tablon_inicial = instancia_carga.tablon_inicial.replace(r'^\s*$', np.nan, regex=True) #Sustituimos espacios en blanco y '' en na
+#instancia_carga.tablon_inicial = instancia_carga.tablon_inicial.replace(r'nan', np.nan, regex=True) #Sustituimos nan de excel en na de numpy
+
+
+#instancia_carga.tablon_inicial = instancia_carga.tablon_inicial.astype(dtype={'CodigoPrevisto': 'string', 'CodigoSustitucion': 'string'} )
+#instancia_carga.tablon_inicial = instancia_carga.tablon_inicial.convert_dtypes()
+
+# COMMAND ----------
+
+instancia_carga.tablon_inicial_read
+
+# COMMAND ----------
+
+#https://www.pschwan.de/how-to/setting-up-data-quality-reports-with-pandas-in-no-time
+data_types = pd.DataFrame(
+    instancia_carga.tablon_inicial_read.dtypes,
+    columns=['Data Type']
+)
+data_types
 
 # COMMAND ----------
 
@@ -92,3 +117,32 @@ instancia_carga.tablon_inicial.columns
 [instancia_carga.tablon_inicial.pivot_table(index=[('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código'), 'Franja','Fecha' ], aggfunc='size')>1] == True
 instancia_carga.tablon_inicial[(instancia_carga.tablon_inicial.iloc[:,0] == 2768) & (instancia_carga.tablon_inicial['Franja'] == 'TARDE') & (instancia_carga.tablon_inicial['Fecha'] == '2022-01-01')]
 
+
+# COMMAND ----------
+
+print(instancia_carga.tablon_inicial_read[instancia_carga.tablon_inicial_read['ABS'].notnull()].count)
+print(instancia_carga.tablon_inicial_read[instancia_carga.tablon_inicial_read['ABS'].notnull() & instancia_carga.tablon_inicial_read['CodigoSustitucion'].isna()].count)
+
+instancia_carga.tablon_inicial_read[instancia_carga.tablon_inicial_read['ABS'].notnull()]
+
+instancia_carga.tablon_inicial_read[instancia_carga.tablon_inicial_read['ABS'].isnull()].count
+
+
+# COMMAND ----------
+
+instancia_carga.tablon_inicial_read.astype(str).describe()
+
+# COMMAND ----------
+
+missing_data = pd.DataFrame(
+    instancia_carga.tablon_inicial_read.isnull().sum(),
+    columns=['Missing Values']
+)
+missing_data
+
+# COMMAND ----------
+
+#!pip install pandas_profiling
+from pandas_profiling import ProfileReport
+prof = ProfileReport(instancia_carga.tablon_inicial_read.iloc[:,12:21])
+prof.to_file(output_file='/dbfs/FileStore/tables/ONCE_Quantum/informe.html')
