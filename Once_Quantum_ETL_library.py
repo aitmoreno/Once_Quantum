@@ -68,7 +68,28 @@ class Once_Quantum_ETL():
     self.tablon_inicial = pd.DataFrame() 
     self.tablon_inicial = pd.read_csv('/dbfs/FileStore/tables/ONCE_Quantum/Tablon_Inicial.csv', parse_dates=True)
     #Aseguramos que los Codigos de vendedores sean categóricos
-    self.tablon_inicial = self.tablon_inicial.astype({'CodigoPrevisto': 'str', 'CodigoSustitucion': 'str', 'ABS': 'str'})
+    self.tablon_inicial = self.tablon_inicial.astype({'CodigoPrevisto': str, 'CodigoSustitucion': str, 'ABS': str})
+    self.tablon_inicial['CodigoPrevisto'] = self.tablon_inicial['CodigoPrevisto'].replace(r'd*\.0', '', regex=True).astype(str)
+    self.tablon_inicial['CodigoSustitucion'] = self.tablon_inicial['CodigoSustitucion'].replace(r'd*\.0', '', regex=True).astype(str)
+    self.tablon_inicial['CodigoPrevisto'] = self.tablon_inicial['CodigoPrevisto'].replace('nan', np.nan, regex=False)
+    self.tablon_inicial['CodigoSustitucion'] = self.tablon_inicial['CodigoSustitucion'].replace('nan', np.nan, regex=False)
+    self.tablon_inicial['ABS'] = self.tablon_inicial['ABS'].replace('nan', np.nan, regex=False)
+    
+    #Incluimos el día de la fecha para compararlo con los cuadrantes necesarios
+    days = {0:'L', 1:'M', 2:'X', 3:'J', 4:'V', 5:'S', 6:'D'}
+    self.tablon_inicial ['DiaSemana'] = pd.to_datetime(self.tablon_inicial['Fecha']).dt.dayofweek.apply(lambda x: days[x])
+    #Calculamos la necesidad de asignar Vendedor
+    ListaNecesidad = []
+    for index, row in df.iterrows():
+      entrada = row['diasemana']
+      grupo = row["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Días operativos')"]
+      Necesario = 0
+      if type(grupo) == str: #No es nan
+        if entrada in (list(grupo)):
+          Necesario = 1
+      ListaNecesidad = np.append(ListaNecesidad, Necesario)
+    #Genearmos la columna de necesidad
+    self.tablon_inicial['Necesidad'] = ListaNecesidad
         
       
   def informe_calidad_dato(self):
@@ -79,23 +100,18 @@ class Once_Quantum_ETL():
     
     #Calidad del Dato Tablón básico
     data_types = pd.DataFrame(
-     instancia_carga.tablon_inicial.dtypes,
+     self.tablon_inicial.dtypes,
      columns=['Data Type'])
     
     missing_data = pd.DataFrame(
-      instancia_carga.tablon_inicial.isnull().sum(),
+      self.tablon_inicial.isnull().sum(),
       columns=['Missing Values'])
     
     self.dq_report = data_types.join(missing_data)
     
     #Informe completo
     print(self.dq_report)
-    self.prof = ProfileReport(instancia_carga.tablon_inicial.iloc[:,12:21])
+    #self.prof = ProfileReport(self.tablon_inicial.iloc[:,12:21])
+    self.prof = ProfileReport(self.tablon_inicial)
     #self.prof.to_file(output_file='/dbfs/FileStore/tables/ONCE_Quantum/informe.html')
     displayHTML(self.prof.to_html()) 
-  
-  
-  
-  
-  
-  
