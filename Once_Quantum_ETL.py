@@ -68,7 +68,28 @@ class Once_Quantum_ETL():
     self.tablon_inicial = pd.DataFrame() 
     self.tablon_inicial = pd.read_csv('/dbfs/FileStore/tables/ONCE_Quantum/Tablon_Inicial.csv', parse_dates=True)
     #Aseguramos que los Codigos de vendedores sean categóricos
-    self.tablon_inicial = self.tablon_inicial.astype({'CodigoPrevisto': 'str', 'CodigoSustitucion': 'str', 'ABS': 'str'})
+    self.tablon_inicial = self.tablon_inicial.astype({'CodigoPrevisto': str, 'CodigoSustitucion': str, 'ABS': str})
+    self.tablon_inicial['CodigoPrevisto'] = self.tablon_inicial['CodigoPrevisto'].replace(r'd*\.0', '', regex=True).astype(str)
+    self.tablon_inicial['CodigoSustitucion'] = self.tablon_inicial['CodigoSustitucion'].replace(r'd*\.0', '', regex=True).astype(str)
+    self.tablon_inicial['CodigoPrevisto'] = self.tablon_inicial['CodigoPrevisto'].replace('nan', np.nan, regex=False)
+    self.tablon_inicial['CodigoSustitucion'] = self.tablon_inicial['CodigoSustitucion'].replace('nan', np.nan, regex=False)
+    self.tablon_inicial['ABS'] = self.tablon_inicial['ABS'].replace('nan', np.nan, regex=False)
+    
+    #Incluimos el día de la fecha para compararlo con los cuadrantes necesarios
+    days = {0:'L', 1:'M', 2:'X', 3:'J', 4:'V', 5:'S', 6:'D'}
+    self.tablon_inicial ['DiaSemana'] = pd.to_datetime(self.tablon_inicial['Fecha']).dt.dayofweek.apply(lambda x: days[x])
+    #Calculamos la necesidad de asignar Vendedor
+    ListaNecesidad = []
+    for index, row in df.iterrows():
+      entrada = row['diasemana']
+      grupo = row["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Días operativos')"]
+      Necesario = 0
+      if type(grupo) == str: #No es nan
+        if entrada in (list(grupo)):
+          Necesario = 1
+      ListaNecesidad = np.append(ListaNecesidad, Necesario)
+    #Genearmos la columna de necesidad
+    self.tablon_inicial['Necesidad'] = ListaNecesidad
         
       
   def informe_calidad_dato(self):
@@ -90,7 +111,8 @@ class Once_Quantum_ETL():
     
     #Informe completo
     print(self.dq_report)
-    self.prof = ProfileReport(self.tablon_inicial.iloc[:,12:21])
+    #self.prof = ProfileReport(self.tablon_inicial.iloc[:,12:21])
+    self.prof = ProfileReport(self.tablon_inicial)
     #self.prof.to_file(output_file='/dbfs/FileStore/tables/ONCE_Quantum/informe.html')
     displayHTML(self.prof.to_html()) 
   
@@ -139,6 +161,11 @@ instancia_datos.leer_datos_iniciales()
 
 # COMMAND ----------
 
+#instancia_datos.tablon_inicial
+instancia_datos.tablon_inicial
+
+# COMMAND ----------
+
 instancia_datos.informe_calidad_dato()
 
 # COMMAND ----------
@@ -163,31 +190,40 @@ print(instancia_datos.tablon_inicial[instancia_datos.tablon_inicial['ABS'].isna(
 # COMMAND ----------
 
 #Hipótesis de nulos por prioridad
-df = instancia_datos.tablon_inicial
+#Chequeamos aquellos puestos que si que tienen Necesidad
+df = instancia_datos.tablon_inicial[instancia_datos.tablon_inicial['Necesidad'] == 1]
+
+print(df[df['CodigoPrevisto'].isnull()].count())
+
 #pd.options.display.max_rows = 20
-pivotado = pd.pivot_table(df[(df['CodigoPrevisto'] == 'nan') | (df['CodigoPrevisto'].isna()) ], index=['SegPV', 'ABS'],  values = ['CodigoPrevisto'], aggfunc=len).merge(df.groupby(['SegPV'])['CodigoPrevisto'].count().to_frame(), left_on='SegPV', right_on='SegPV').rename(columns={"CodigoPrevisto_x": "Codigos No Asigandos", "CodigoPrevisto_y": "Total"})
-pivotado['porcentaje_nulos'] = pivotado.iloc[:,0] / pivotado.iloc[:,1]
+pivotado = pd.pivot_table(df[df['CodigoPrevisto'].isnull()], index=['SegPV'],  values = ['CodigoPrevisto'], aggfunc=len).merge(df.groupby(['SegPV'])["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].count().to_frame(), left_on='SegPV', right_on='SegPV').rename(columns={"CodigoPrevisto": "Codigos NO Asigandos", "('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')": "Total"})
+pivotado['porcentaje_NO_asignados'] = pivotado.iloc[:,0] / pivotado.iloc[:,1]
 pivotado['Asignados'] =  pivotado.iloc[:,1] - pivotado.iloc[:,0]
 print(pivotado.sum())
 print(instancia_datos.tablon_inicial['SegPV'].value_counts().sum())
 pivotado
-#pd.pivot_table(df[df['CodigoPrevisto'] == 'nan'], index=['SegPV', 'ABS'])
-#df.groupby(['SegPV'])['CodigoPrevisto'].count().to_frame()
-
 
 # COMMAND ----------
 
-pivotado.sum().to_frame()
+print(pivotado.sum())
+df[df['CodigoPrevisto'].isnull()].count()
+#df['CodigoPrevisto'].values
 
 # COMMAND ----------
 
-instancia_datos.tablon_inicial.replace(r'nan', np.nan, regex=True).astype(str).describe()
+#Sin absentismo y asignados
+print(pd.pivot_table(df, index=['SegPV', 'CodigoPrevisto'],  values = ['Franja'], aggfunc=len).sum())
+      
+pd.pivot_table(df, index=['SegPV', 'CodigoPrevisto'],  values = ['Franja'], aggfunc=len)
+#(df.groupby(['SegPV', 'CodigoPrevisto'])['Franja'].count()).sum()
+
+#Por absentismo
+#pd.pivot_table(df, index=['SegPV', 'ABS', 'CodigoPrevisto'],  values = ['Franja'], aggfunc=len).sum()
+
+# COMMAND ----------
+
+pd.pivot_table(df, index=[ 'CodigoPrevisto', 'CodigoSustitucion', 'ABS'],  values = ['Fichero'], aggfunc=len).reset_index().head(20)
 
 # COMMAND ----------
 
 pd.pivot_table(df, index=["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')", 'CodigoPrevisto', 'Franja', 'CodigoSustitucion', 'ABS'],  values = ['Fichero'], aggfunc=len).reset_index().head(20)
-
-# COMMAND ----------
-
-pd.pivot_table(df, index=['CodigoPrevisto', 'Franja'],  values = ['Fichero'], aggfunc=len).reset_index().head(20).append(
-pd.pivot_table(df, index=['CodigoSustitucion', 'Franja'],  values = ['Fichero'], aggfunc=len).reset_index().head(20))
