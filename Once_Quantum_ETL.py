@@ -48,7 +48,6 @@ class Once_Quantum_ETL():
       output = output.append(pd.DataFrame(dict) , ignore_index=True)
     output = output.set_index('Indice')
     ficheroresult = pd.merge(df_init.iloc[:,0:12], output, left_index=True, right_index=True)
-    #ficheroresult = pd.concat([df_init.iloc[:,0:12], output], axis=1, join='inner')
     return ficheroresult
     
     
@@ -80,18 +79,18 @@ class Once_Quantum_ETL():
     
     #Calidad del Dato Tablón básico
     data_types = pd.DataFrame(
-     instancia_carga.tablon_inicial.dtypes,
+     self.tablon_inicial.dtypes,
      columns=['Data Type'])
     
     missing_data = pd.DataFrame(
-      instancia_carga.tablon_inicial.isnull().sum(),
+      self.tablon_inicial.isnull().sum(),
       columns=['Missing Values'])
     
     self.dq_report = data_types.join(missing_data)
     
     #Informe completo
     print(self.dq_report)
-    self.prof = ProfileReport(instancia_carga.tablon_inicial.iloc[:,12:21])
+    self.prof = ProfileReport(self.tablon_inicial.iloc[:,12:21])
     #self.prof.to_file(output_file='/dbfs/FileStore/tables/ONCE_Quantum/informe.html')
     displayHTML(self.prof.to_html()) 
   
@@ -148,15 +147,47 @@ instancia_datos.informe_calidad_dato()
 
 #[instancia_datos.tablon_inicial.groupby(by=[('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código'), 'Franja','Fecha' ], dropna=False).count() > 1] == True
 #[instancia_datos.tablon_inicial.pivot_table(index=[('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código'), 'Franja','Fecha' ], aggfunc='size')>1] == True
-instancia_carga.tablon_inicial[
-  (instancia_datos.tablon_inicial.iloc[:,1] == 2768)  #& (instancia_datos.tablon_inicial['Franja'] == 'TARDE') & (instancia_datos.tablon_inicial['Fecha'] == '2022-01-01')
-                              ]
+instancia_datos.tablon_inicial[
+  #(instancia_datos.tablon_inicial.iloc[:,1] == 2768)  #& (instancia_datos.tablon_inicial['Franja'] == 'TARDE')   & 
+    (instancia_datos.tablon_inicial['Fecha'] == '2022-01-03'  )     ]
 
 
 # COMMAND ----------
 
 #Conteos de incidencias sin vendedor asignado
-print(instancia_carga.tablon_inicial[instancia_carga.tablon_inicial['ABS'].notnull() & instancia_carga.tablon_inicial['CodigoSustitucion'].isna()].count)
-print(instancia_carga.tablon_inicial[instancia_carga.tablon_inicial['ABS'].notnull() & instancia_carga.tablon_inicial['CodigoSustitucion'].notnull()].count)
-print(instancia_carga.tablon_inicial[instancia_carga.tablon_inicial['ABS'].isna()].count)
+print(instancia_datos.tablon_inicial[instancia_datos.tablon_inicial['ABS'].notnull() & instancia_datos.tablon_inicial['CodigoSustitucion'].isna()].count)
+print(instancia_datos.tablon_inicial[instancia_datos.tablon_inicial['ABS'].notnull() & instancia_datos.tablon_inicial['CodigoSustitucion'].notnull()].count)
+print(instancia_datos.tablon_inicial[instancia_datos.tablon_inicial['ABS'].isna()].count)
 
+
+# COMMAND ----------
+
+#Hipótesis de nulos por prioridad
+df = instancia_datos.tablon_inicial
+#pd.options.display.max_rows = 20
+pivotado = pd.pivot_table(df[(df['CodigoPrevisto'] == 'nan') | (df['CodigoPrevisto'].isna()) ], index=['SegPV', 'ABS'],  values = ['CodigoPrevisto'], aggfunc=len).merge(df.groupby(['SegPV'])['CodigoPrevisto'].count().to_frame(), left_on='SegPV', right_on='SegPV').rename(columns={"CodigoPrevisto_x": "Codigos No Asigandos", "CodigoPrevisto_y": "Total"})
+pivotado['porcentaje_nulos'] = pivotado.iloc[:,0] / pivotado.iloc[:,1]
+pivotado['Asignados'] =  pivotado.iloc[:,1] - pivotado.iloc[:,0]
+print(pivotado.sum())
+print(instancia_datos.tablon_inicial['SegPV'].value_counts().sum())
+pivotado
+#pd.pivot_table(df[df['CodigoPrevisto'] == 'nan'], index=['SegPV', 'ABS'])
+#df.groupby(['SegPV'])['CodigoPrevisto'].count().to_frame()
+
+
+# COMMAND ----------
+
+pivotado.sum().to_frame()
+
+# COMMAND ----------
+
+instancia_datos.tablon_inicial.replace(r'nan', np.nan, regex=True).astype(str).describe()
+
+# COMMAND ----------
+
+pd.pivot_table(df, index=["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')", 'CodigoPrevisto', 'Franja', 'CodigoSustitucion', 'ABS'],  values = ['Fichero'], aggfunc=len).reset_index().head(20)
+
+# COMMAND ----------
+
+pd.pivot_table(df, index=['CodigoPrevisto', 'Franja'],  values = ['Fichero'], aggfunc=len).reset_index().head(20).append(
+pd.pivot_table(df, index=['CodigoSustitucion', 'Franja'],  values = ['Fichero'], aggfunc=len).reset_index().head(20))
