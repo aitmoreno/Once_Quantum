@@ -1,7 +1,12 @@
 # Databricks notebook source
-#!pip install xlrd
-#!pip install openpyxl
-#!pip install pandas_profiling
+#WARNING: You are using pip version 21.0.1; however, version 22.2.2 is available.
+#You should consider upgrading via the '/databricks/python3/bin/python -m pip install --upgrade pip' command.
+
+# COMMAND ----------
+
+!pip install xlrd
+!pip install openpyxl
+!pip install pandas_profiling
 
 # COMMAND ----------
 
@@ -50,18 +55,26 @@ class Once_Quantum_ETL():
     ficheroresult = pd.merge(df_init.iloc[:,0:12], output, left_index=True, right_index=True)
     return ficheroresult
     
-    
+  def leer_datos_vendedor_puntodeventa(self, fichero):
+    ficheroresult = pd.DataFrame() 
+    vendedor_pv = pd.read_excel(fichero, engine='openpyxl', sheet_name = 'Inf Asig Vend-Pv', header = [5])
+    return vendedor_pv
+  
   def procesar_directorio(self):
     path = self.input_path
     self.tablon_inicial = pd.DataFrame() 
+    self.tablon_pv_vendedor = pd.DataFrame()
     filenames = glob.glob(path + "*.xlsx")
     for file in filenames:
      print("Reading file = ",file)
      self.tablon_inicial =  self.tablon_inicial.append(instancia_carga.procesar_fichero(file) , ignore_index=True) #Acumulamos la información de los ficheros individuales
      self.tablon_inicial = self.tablon_inicial.replace(r'^\s*$', np.nan, regex=True) #Sustituimos espacios en blanco y '' en na
      self.tablon_inicial = self.tablon_inicial.replace(r'nan', np.nan, regex=True) #Sustituimos nan de excel en na de numpy
+     #Leemos también las relaciones entre puntos de venta y vendedores
+     self.tablon_pv_vendedor = self.tablon_pv_vendedor.append(instancia_carga.leer_datos_vendedor_puntodeventa(file), ignore_index=True)
     #Grabamos el resultado final en formato DBFS
-    self.tablon_inicial.to_csv(path + 'Tablon_Inicial.csv') 
+    self.tablon_inicial.to_csv(path + 'Tablon_Inicial.csv')
+    self.tablon_pv_vendedor.to_csv(path + 'Tablon_PV_Vendedor.csv')
     
   def leer_datos_iniciales(self):
     #Cargamos los datos almacenados en el proceso de Ingesta
@@ -80,8 +93,8 @@ class Once_Quantum_ETL():
     self.tablon_inicial ['DiaSemana'] = pd.to_datetime(self.tablon_inicial['Fecha']).dt.dayofweek.apply(lambda x: days[x])
     #Calculamos la necesidad de asignar Vendedor
     ListaNecesidad = []
-    for index, row in df.iterrows():
-      entrada = row['diasemana']
+    for index, row in self.tablon_inicial.iterrows():
+      entrada = row['DiaSemana']
       grupo = row["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Días operativos')"]
       Necesario = 0
       if type(grupo) == str: #No es nan
@@ -90,8 +103,12 @@ class Once_Quantum_ETL():
       ListaNecesidad = np.append(ListaNecesidad, Necesario)
     #Genearmos la columna de necesidad
     self.tablon_inicial['Necesidad'] = ListaNecesidad
-        
-      
+    #Leemos el fichero de puntos de venta por vendedor
+    self.tablon_pv_vendedor = pd.read_csv('/dbfs/FileStore/tables/ONCE_Quantum/Tablon_PV_Vendedor.csv', parse_dates=True)
+    #Generamos la ouert join entre el diario y los PV asigandos a Vendedor
+    lista_pv = self.tablon_pv_vendedor['Código punto de venta'].unique()
+    self.tablon_inicial['PV_Asignado'] = self.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].apply(lambda x: 1 if x in (lista_pv) else 0)
+    
   def informe_calidad_dato(self):
     #https://www.pschwan.de/how-to/setting-up-data-quality-reports-with-pandas-in-no-time
     #Summary general
@@ -118,9 +135,6 @@ class Once_Quantum_ETL():
   
   
   
-  
-  
-  
 
 # COMMAND ----------
 
@@ -128,7 +142,7 @@ class Once_Quantum_ETL():
 # INGESTA DE TODOS LOS FICHEROS 
 #####################################################################################
 
-#instancia_carga = Once_Quantum_ETL('/dbfs/FileStore/tables/ONCE_Quantum/')
+instancia_carga = Once_Quantum_ETL('/dbfs/FileStore/tables/ONCE_Quantum/')
 
 # COMMAND ----------
 
@@ -142,13 +156,13 @@ ficheroresult[ficheroresult.iloc[:,0] == 2768]
 #Carga del tablón inicial con los datos de todos los ficheros
 ######################################################################################
 
-#instancia_carga.procesar_directorio()
+instancia_carga.procesar_directorio()
 
 
 # COMMAND ----------
 
 #presentar resultado de la Ingesta inicial
-#instancia_carga.tablon_inicial
+instancia_carga.tablon_inicial
 
 # COMMAND ----------
 
@@ -227,3 +241,60 @@ pd.pivot_table(df, index=[ 'CodigoPrevisto', 'CodigoSustitucion', 'ABS'],  value
 # COMMAND ----------
 
 pd.pivot_table(df, index=["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')", 'CodigoPrevisto', 'Franja', 'CodigoSustitucion', 'ABS'],  values = ['Fichero'], aggfunc=len).reset_index().head(20)
+
+# COMMAND ----------
+
+#Validación de join entre puntos de venta, vendedores y diario
+
+# COMMAND ----------
+
+print(instancia_datos.tablon_pv_vendedor['Código punto de venta'].astype('str').describe())
+print(instancia_datos.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].astype('str').describe())
+
+
+# COMMAND ----------
+
+#Hacemos la join por el original.vendedor_pv.Código punto de venta
+lista_pv = instancia_datos.tablon_pv_vendedor['Código punto de venta'].unique()
+original_necesidad_pv = instancia_datos.tablon_inicial[instancia_datos.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].isin (lista_pv)]
+print(original_necesidad_pv.shape)
+
+# COMMAND ----------
+
+#Puntos de Venta en los diarios, que no están activos
+lista_pv_no_validos = instancia_datos.tablon_inicial[~instancia_datos.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].isin (lista_pv)].iloc[:,1].unique()
+lista_pv_no_validos.shape
+display(pd.DataFrame(lista_pv_no_validos))
+
+# COMMAND ----------
+
+# DBTITLE 1,Se demuestra que no hay puntos de venta del diario que no estén en la asiganción a vendedores y que tengan Abstención
+print(instancia_datos.tablon_inicial[~instancia_datos.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].isin (lista_pv)].ABS.describe())
+instancia_datos.tablon_inicial[~instancia_datos.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].isin (lista_pv) & instancia_datos.tablon_inicial['ABS'].notnull()]
+
+# COMMAND ----------
+
+#Puntos de ventas en las asiganciones de vendedores que no están en los diarios
+lista_diarios = instancia_datos.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].unique()
+listas_diarios_no_asignacion = instancia_datos.tablon_pv_vendedor[~instancia_datos.tablon_pv_vendedor['Código punto de venta'].isin (lista_diarios)].iloc[:,3].unique()
+listas_diarios_no_asignacion.shape
+display(pd.DataFrame(listas_diarios_no_asignacion))
+
+# COMMAND ----------
+
+#La tabla con un inner join
+print(original_necesidad_pv["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].astype('str').describe())
+
+# COMMAND ----------
+
+#Join final con todos los datos, outerjoin de puntos de venta que estén o no estén en la relación punto de venta - vendedor
+
+# COMMAND ----------
+
+lista_pv = instancia_datos.tablon_pv_vendedor['Código punto de venta'].unique()
+instancia_datos.tablon_inicial['PV_Asignado'] = instancia_datos.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].apply(lambda x: 1 if x in (lista_pv) else 0)
+
+# COMMAND ----------
+
+instancia_datos.tablon_inicial['PV_Asignado'].describe()
+instancia_datos.tablon_inicial['PV_Asignado'].sum()
