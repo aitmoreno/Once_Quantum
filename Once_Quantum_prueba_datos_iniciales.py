@@ -56,6 +56,11 @@ original.tablon_inicial[(original.tablon_inicial['PV_Asignado'] == 0) & (origina
 
 # COMMAND ----------
 
+print(original.tablon_inicial[original.tablon_inicial['PV_Asignado'].isnull()]['PV_Asignado'].describe())
+original.tablon_inicial[(original.tablon_inicial['PV_Asignado'].isnull()) & (original.tablon_inicial['PV_Asignado'].notnull())]
+
+# COMMAND ----------
+
 #Puntos de ventas en las asiganciones de vendedores que no están en los diarios
 lista_diarios = original.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].unique()
 listas_diarios_no_asignacion = original.tablon_pv_vendedor[~original.tablon_pv_vendedor['Código punto de venta'].isin (lista_diarios)].iloc[:,3].unique()

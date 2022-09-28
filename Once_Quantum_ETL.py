@@ -60,21 +60,31 @@ class Once_Quantum_ETL():
     vendedor_pv = pd.read_excel(fichero, engine='openpyxl', sheet_name = 'Inf Asig Vend-Pv', header = [5])
     return vendedor_pv
   
+  def leer_datos_vendedor(self, fichero):
+    ficheroresult = pd.DataFrame() 
+    vendedor = pd.read_excel(fichero, engine='openpyxl', sheet_name = 'GESCOM', header = [0])
+    return vendedor
+
+  
   def procesar_directorio(self):
     path = self.input_path
     self.tablon_inicial = pd.DataFrame() 
     self.tablon_pv_vendedor = pd.DataFrame()
+    self.tablon_vendedores = pd.DataFrame()
     filenames = glob.glob(path + "*.xlsx")
     for file in filenames:
      print("Reading file = ",file)
-     self.tablon_inicial =  self.tablon_inicial.append(instancia_carga.procesar_fichero(file) , ignore_index=True) #Acumulamos la información de los ficheros individuales
+     self.tablon_inicial =  self.tablon_inicial.append(self.procesar_fichero(file) , ignore_index=True) #Acumulamos la información de los ficheros individuales
      self.tablon_inicial = self.tablon_inicial.replace(r'^\s*$', np.nan, regex=True) #Sustituimos espacios en blanco y '' en na
      self.tablon_inicial = self.tablon_inicial.replace(r'nan', np.nan, regex=True) #Sustituimos nan de excel en na de numpy
      #Leemos también las relaciones entre puntos de venta y vendedores
-     self.tablon_pv_vendedor = self.tablon_pv_vendedor.append(instancia_carga.leer_datos_vendedor_puntodeventa(file), ignore_index=True)
+     self.tablon_pv_vendedor = self.tablon_pv_vendedor.append(self.leer_datos_vendedor_puntodeventa(file), ignore_index=True)
+      #Leemos también los vendedores
+     self.tablon_vendedores = self.tablon_vendedores.append(self.leer_datos_vendedor(file), ignore_index=True)
     #Grabamos el resultado final en formato DBFS
     self.tablon_inicial.to_csv(path + 'Tablon_Inicial.csv')
     self.tablon_pv_vendedor.to_csv(path + 'Tablon_PV_Vendedor.csv')
+    self.tablon_vendedores.to_csv(path + 'Tablon_Vendedores.csv')
     
   def leer_datos_iniciales(self):
     #Cargamos los datos almacenados en el proceso de Ingesta
@@ -105,9 +115,11 @@ class Once_Quantum_ETL():
     self.tablon_inicial['Necesidad'] = ListaNecesidad
     #Leemos el fichero de puntos de venta por vendedor
     self.tablon_pv_vendedor = pd.read_csv('/dbfs/FileStore/tables/ONCE_Quantum/Tablon_PV_Vendedor.csv', parse_dates=True)
-    #Generamos la ouert join entre el diario y los PV asigandos a Vendedor
+    #Generamos la outer join entre el diario y los PV asigandos a Vendedor
     lista_pv = self.tablon_pv_vendedor['Código punto de venta'].unique()
     self.tablon_inicial['PV_Asignado'] = self.tablon_inicial["('GESTIÓN COBERTURA PUNTO DE VENTA', 'Código')"].apply(lambda x: 1 if x in (lista_pv) else 0)
+    #Leemos los vendedores
+    self.tablon_vendedores = pd.read_csv('/dbfs/FileStore/tables/ONCE_Quantum/Tablon_PV_Vendedor.csv', parse_dates=True)
     
   def informe_calidad_dato(self):
     #https://www.pschwan.de/how-to/setting-up-data-quality-reports-with-pandas-in-no-time
@@ -166,9 +178,7 @@ instancia_carga.tablon_inicial
 
 # COMMAND ----------
 
-###########################################################################################################
-#Cargamos los datos almacenados en el proceso de Ingesta, si no queremos reprocesar de nuevo los ficheros
-###########################################################################################################
+  ########################################################################################################
 #Inicio de proceso post-ingesta
 instancia_datos = Once_Quantum_ETL('/dbfs/FileStore/tables/ONCE_Quantum/')
 instancia_datos.leer_datos_iniciales()
@@ -200,6 +210,17 @@ print(instancia_datos.tablon_inicial[instancia_datos.tablon_inicial['ABS'].notnu
 print(instancia_datos.tablon_inicial[instancia_datos.tablon_inicial['ABS'].notnull() & instancia_datos.tablon_inicial['CodigoSustitucion'].notnull()].count)
 print(instancia_datos.tablon_inicial[instancia_datos.tablon_inicial['ABS'].isna()].count)
 
+
+# COMMAND ----------
+
+print(instancia_datos.tablon_vendedores.shape)
+instancia_datos.tablon_vendedores.iloc[:,1:5]
+
+# COMMAND ----------
+
+print(instancia_datos.tablon_vendedores.shape)
+print(instancia_datos.tablon_vendedores[~instancia_datos.tablon_vendedores.iloc[:,1:108].duplicated(keep='first')])
+instancia_datos.tablon_vendedores[~instancia_datos.tablon_vendedores.iloc[:,1:108].duplicated(keep='first')]
 
 # COMMAND ----------
 
@@ -298,3 +319,13 @@ instancia_datos.tablon_inicial['PV_Asignado'] = instancia_datos.tablon_inicial["
 
 instancia_datos.tablon_inicial['PV_Asignado'].describe()
 instancia_datos.tablon_inicial['PV_Asignado'].sum()
+
+# COMMAND ----------
+
+fichero = '/dbfs/FileStore/tables/ONCE_Quantum/GESTIÓN_COBERTURA_NE11__2022_01_03_.xlsx'
+vendedores = pd.read_excel(fichero, engine='openpyxl', sheet_name = 'GESCOM', header = [0])
+vendedores
+
+# COMMAND ----------
+
+vendedores.shape
